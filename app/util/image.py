@@ -31,7 +31,10 @@ def get_code(dat_read):
     print("not jpg, png, gif")
     return -1, -1
 
-
+def test_dea(file_path, out_path):
+    if not os.path.exti(file_path):
+        return None
+    
 def decode_dat(file_path, out_path):
     """
     解密文件，并生成图片
