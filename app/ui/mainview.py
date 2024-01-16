@@ -9,6 +9,7 @@
 """
 import json
 import os.path
+import traceback
 
 from PyQt5.QtCore import pyqtSignal, QUrl, Qt, QThread, QSize
 from PyQt5.QtGui import QPixmap, QFont, QDesktopServices, QIcon
@@ -24,6 +25,7 @@ from .menu.export import ExportDialog
 from .tool.tool_window import ToolWindow
 from ..DataBase.output_pc import Output
 from ..components.QCursorGif import QCursorGif
+from ..log import logger
 from ..person import Me
 
 # 美化样式表
@@ -83,10 +85,48 @@ QCheckBox::indicator:checked{
     Height:20px;
     image: url(:/icons/icons/select.svg);
 }
+QScrollBar:vertical {
+    border-width: 0px;
+    border: none;
+    background:rgba(133, 135, 138, 0);
+    width:4px;
+    margin: 0px 0px 0px 0px;
+}
+QScrollBar::handle:vertical {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+    stop: 0 rgb(133, 135, 138), stop: 0.5 rgb(133, 135, 138), stop:1 rgb(133, 135, 138));
+    min-height: 20px;
+    max-height: 20px;
+    margin: 0 0px 0 0px;
+    border-radius: 2px;
+}
+QScrollBar::add-line:vertical {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+    stop: 0 rgba(133, 135, 138, 0), stop: 0.5 rgba(133, 135, 138, 0),  stop:1 rgba(133, 135, 138, 0));
+    height: 0px;
+    border: none;
+    subcontrol-position: bottom;
+    subcontrol-origin: margin;
+}
+QScrollBar::sub-line:vertical {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+    stop: 0  rgba(133, 135, 138, 0), stop: 0.5 rgba(133, 135, 138, 0),  stop:1 rgba(133, 135, 138, 0));
+    height: 0 px;
+    border: none;
+    subcontrol-position: top;
+    subcontrol-origin: margin;
+}
+QScrollBar::sub-page:vertical {
+    background: rgba(133, 135, 138, 0);
+}
+
+QScrollBar::add-page:vertical {
+    background: rgba(133, 135, 138, 0);
+}
 """
 
 
-class MainWinController(QMainWindow, mainwindow.Ui_MainWindow,QCursorGif):
+class MainWinController(QMainWindow, mainwindow.Ui_MainWindow, QCursorGif):
     exitSignal = pyqtSignal(bool)
     okSignal = pyqtSignal(bool)
 
@@ -104,7 +144,7 @@ class MainWinController(QMainWindow, mainwindow.Ui_MainWindow,QCursorGif):
         self.setStyleSheet(Stylesheet)
         self.listWidget.clear()
         self.resize(QSize(800, 600))
-        self.action_desc.triggered.connect(self.about)
+
         self.load_flag = False
         self.load_data()
         self.load_num = 0
@@ -146,41 +186,8 @@ class MainWinController(QMainWindow, mainwindow.Ui_MainWindow,QCursorGif):
         self.initCursor([':/icons/icons/Cursors/%d.png' %
                          i for i in range(8)])
         self.setCursorTimeout(100)
-
         self.startBusy()
-
-
-        self.action_help_contact.triggered.connect(
-            lambda: QDesktopServices.openUrl(QUrl("https://blog.lc044.love/post/5")))
-        self.action_help_chat.triggered.connect(
-            lambda: QDesktopServices.openUrl(QUrl("https://blog.lc044.love/post/5")))
-        self.action_help_decrypt.triggered.connect(
-            lambda: QDesktopServices.openUrl(QUrl("https://blog.lc044.love/post/4")))
-        self.listWidget.setVisible(False)
-        self.stackedWidget.setVisible(False)
-        self.listWidget.currentRowChanged.connect(self.setCurrentIndex)
-        tool_item = QListWidgetItem(Icon.Tool_Icon, '工具', self.listWidget)
-        chat_item = QListWidgetItem(Icon.Chat_Icon, '聊天', self.listWidget)
-        contact_item = QListWidgetItem(Icon.Contact_Icon, '好友', self.listWidget)
-        myinfo_item = QListWidgetItem(Icon.Home_Icon, '我的', self.listWidget)
-        tool_window = ToolWindow()
-        tool_window.get_info_signal.connect(self.set_my_info)
-        tool_window.decrypt_success_signal.connect(self.decrypt_success)
-        tool_window.load_finish_signal.connect(self.loading)
-        self.stackedWidget.addWidget(tool_window)
-        self.chat_window = ChatWindow()
-        # chat_window = QWidget()
-        self.stackedWidget.addWidget(self.chat_window)
-        self.contact_window = ContactWindow()
-        self.stackedWidget.addWidget(self.contact_window)
-        label = QLabel('该功能暂不支持哦')
-        label.setFont(QFont("微软雅黑", 50))
-        label.setAlignment(Qt.AlignCenter)
-        self.stackedWidget.addWidget(label)
-        tool_window.load_finish_signal.connect(self.loading)
-        self.statusbar.showMessage('聊天窗口上划到顶部会加载新的聊天记录\n一次不行那就多来几次')
-        self.contact_window.load_finish_signal.connect(self.loading)
-        self.chat_window.load_finish_signal.connect(self.loading)
+        self.about_view = AboutDialog(main_window=self, parent=self)
 
     def setCurrentIndex(self, row):
         self.stackedWidget.setCurrentIndex(row)
@@ -200,8 +207,9 @@ class MainWinController(QMainWindow, mainwindow.Ui_MainWindow,QCursorGif):
         self.avatar = QPixmap()
         try:
             img_bytes = misc_db.get_avatar_buffer(wxid)
-        except :
+        except:
             close_db()
+            logger.error(f'数据库错误:\n{traceback.format_exc()}')
             QMessageBox.critical(self, "数据库错误", "请重启微信后重试")
             import shutil
             shutil.rmtree('./app/Database/Msg')
@@ -244,7 +252,7 @@ class MainWinController(QMainWindow, mainwindow.Ui_MainWindow,QCursorGif):
         # self.startBusy()
         if self.sender() == self.action_output_CSV:
             self.outputThread = Output(None, type_=Output.CSV_ALL)
-            self.outputThread.startSignal.connect(lambda x:self.startBusy())
+            self.outputThread.startSignal.connect(lambda x: self.startBusy())
             self.outputThread.okSignal.connect(
                 lambda x: self.message('聊天记录导出成功'))
             self.outputThread.start()
@@ -266,9 +274,7 @@ class MainWinController(QMainWindow, mainwindow.Ui_MainWindow,QCursorGif):
         """
         关于
         """
-        # QMessageBox.about(self, "关于",config.about)
-        about_view = AboutDialog(self)
-        about_view.show()
+        self.about_view.show()
 
     def decrypt_success(self):
         QMessageBox.about(self, "解密成功", "请重新启动")
@@ -284,10 +290,12 @@ class MainWinController(QMainWindow, mainwindow.Ui_MainWindow,QCursorGif):
             event.accept()
         else:
             event.ignore()
+
     def close(self) -> bool:
         close_db()
-        super().close()
         self.contact_window.close()
+
+        super().close()
         self.exitSignal.emit(True)
 
 
