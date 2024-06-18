@@ -1,1 +1,12 @@
 name: testaction
+
+on: 
+  push:
+    branches:
+      - main
+      - 'we1'
+
+  pull_request:
+    branches:
+      - 'we1'
+ 
